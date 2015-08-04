@@ -244,17 +244,4 @@ TEST(Polynomial, JenkinsTraubManyRoots) {
   }
 }
 
-TEST(Polynomial, JenkinsTraubExample) {
-  VectorXd poly(4);
-  poly(0) = 1;
-  poly(1) = -12;
-  poly(2) = 0;
-  poly(3) = -42;
-
-  VectorXd real;
-  bool success = FindPolynomialRootsJenkinsTraub(poly, &real, NULL);
-
-  EXPECT_EQ(success, true);
-}
-
 }  // namespace rpoly_plus_plus

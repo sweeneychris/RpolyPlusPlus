@@ -20,6 +20,31 @@ Eigen3 library: http://eigen.tuxfamily.org/
 
 This library is header-only so the installation is simple.
 
+Building
+--------
+Run the following commands from the root directory of RpolyPlusPlus.
+
+```
+mkdir build
+cd build
+cmake ..
+make
+```
+
+This should build the library. Note that the unit tests are enabled by
+default. To build without the unit tests change the cmake line to:
+
+```
+cmake .. -DBUILD_TESTING=Off
+```
+
+If testing is enabled, you can run the unit test from the build directory with:
+```
+./bin/find_polynomial_roots_jenkins_traub_test
+```
+
+All unit tests should pass.
+
 Questions
 ---------
 
