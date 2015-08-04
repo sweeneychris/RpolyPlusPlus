@@ -109,7 +109,8 @@ void SyntheticDivisionAndEvaluate(const VectorXd& polynomial,
   *eval = polynomial.reverse()(0) + quotient->reverse()(0) * x;
 }
 
-// Both the polynomial and the quadratic divisor should have leading 1s.
+// Perform division of a polynomial by a quadratic factor. The quadratic divisor
+// should have leading 1s.
 void QuadraticSyntheticDivision(const VectorXd& polynomial,
                                 const VectorXd& quadratic_divisor,
                                 VectorXd* quotient,
@@ -140,9 +141,8 @@ void QuadraticSyntheticDivision(const VectorXd& polynomial,
       polynomial.reverse()(0) - quadratic_divisor(2) * quotient->reverse()(0);
 }
 
-// Determines whether the JK iteration has converged by examining the linear
-// sequence (t_lambda) and quadratic sequence (sigma_lambda) to check for
-// convergence.
+// Determines whether the iteration has converged by examining the three most
+// recent values for convergence.
 template<typename T>
 bool HasConverged(const T& sequence) {
   const bool convergence_condition_1 =
