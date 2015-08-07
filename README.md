@@ -2,7 +2,7 @@ RPOLY - A Polynomial Root-finding library
 =========================================
 
 A three-stage algorithm for finding roots of polynomials with real coefficients
-as outlined in: "A Three-Stage Algorithm for Real Polynomaials Using Quadratic
+as outlined in: "A Three-Stage Algorithm for Real Polynomials Using Quadratic
 Iteration" by Jenkins and Traub, SIAM 1970. Please note that this variant is
 different than the complex-coefficient version, and is estimated to be up to 4
 times faster.
