@@ -56,8 +56,8 @@ namespace {
 #endif
 
 // Machine precision constants.
-static const double mult_eps = 1e-16;
-static const double sum_eps = 1e-16;
+static const double mult_eps = 2e-16;
+static const double sum_eps = 2e-16;
 
 enum ConvergenceType{
   NO_CONVERGENCE = 0,
