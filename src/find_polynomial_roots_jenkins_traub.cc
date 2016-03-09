@@ -424,10 +424,10 @@ ConvergenceType JenkinsTraubSolver::ApplyFixedShiftToKPolynomial(
     sigma_lambda(2) = variable_shift_sigma(2);
 
     // Return with the convergence code if the sequence has converged.
-    if (HasConverged(t_lambda)) {
-      return LINEAR_CONVERGENCE;
-    } else if (HasConverged(sigma_lambda)) {
+    if (HasConverged(sigma_lambda)) {
       return QUADRATIC_CONVERGENCE;
+    } else if (HasConverged(t_lambda)) {
+      return LINEAR_CONVERGENCE;
     }
 
     // Compute K_next using the formula above.
@@ -470,7 +470,6 @@ bool JenkinsTraubSolver::ApplyQuadraticShiftToKPolynomial(
   if (attempted_quadratic_shift_) {
     return false;
   }
-  attempted_quadratic_shift_ = true;
 
   const double kTinyRelativeStep = 0.01;
 
@@ -540,6 +539,7 @@ bool JenkinsTraubSolver::ApplyQuadraticShiftToKPolynomial(
     prev_poly_at_root = poly_at_root;
   }
 
+  attempted_quadratic_shift_ = true;
   return ApplyLinearShiftToKPolynomial(root, kMaxLinearShiftIterations);
 }
 
@@ -552,7 +552,6 @@ bool JenkinsTraubSolver::ApplyLinearShiftToKPolynomial(
   if (attempted_linear_shift_) {
     return false;
   }
-  attempted_linear_shift_ = true;
 
   // Compute an initial guess for the root.
   double real_root = (root -
@@ -598,6 +597,8 @@ bool JenkinsTraubSolver::ApplyLinearShiftToKPolynomial(
                                               kMaxQuadraticShiftIterations);
     }
   }
+
+  attempted_linear_shift_ = true;
   return ApplyQuadraticShiftToKPolynomial(root, kMaxQuadraticShiftIterations);
 }
 
