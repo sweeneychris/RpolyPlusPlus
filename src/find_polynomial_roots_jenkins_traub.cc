@@ -38,6 +38,8 @@
 #include <cmath>
 #include <complex>
 #include <iostream>
+#include <limits>
+#include <vector>
 
 #include "src/polynomial.h"
 
@@ -133,8 +135,8 @@ void QuadraticSyntheticDivision(const VectorXd& polynomial,
   for (int i = 2; i < polynomial.size() - 2; i++) {
     (*quotient)(i) = polynomial(i) - (*quotient)(i - 2) * quadratic_divisor(2) -
                      (*quotient)(i - 1) * quadratic_divisor(1);
-
   }
+
   const VectorXd::ReverseReturnType &creverse_quotient = quotient->reverse();
   (*remainder)(0) = polynomial.reverse()(1) -
                     quadratic_divisor(1) * creverse_quotient(0) -
@@ -154,6 +156,37 @@ bool HasConverged(const T& sequence) {
 
   // If the sequence has converged then return true.
   return convergence_condition_1 && convergence_condition_2;
+}
+
+// Determines if the root has converged by measuring the relative and absolute
+// change in the root value. This stopping criterion is a simple measurement
+// that proves to work well. It is referred to as "Ward's method" in the
+// following reference:
+//
+// Nikolajsen, Jorgen L. "New stopping criteria for iterative root finding."
+// Royal Society open science (2014)
+template <typename T>
+bool HasRootConverged(const std::vector<T>& roots) {
+  static const double kRootMagnitudeTolerance = 1e-8;
+  static const double kAbsoluteTolerance = 1e-14;
+  static const double kRelativeTolerance = 1e-10;
+
+  if (roots.size() != 3) {
+    return false;
+  }
+
+  const double e_i = std::abs(roots[2] - roots[1]);
+  const double e_i_minus_1 = std::abs(roots[1] - roots[0]);
+  const double mag_root = std::abs(roots[1]);
+  if (e_i <= e_i_minus_1) {
+    if (mag_root < kRootMagnitudeTolerance) {
+      return e_i < kAbsoluteTolerance;
+    } else {
+      return e_i / mag_root <= kRelativeTolerance;
+    }
+  }
+
+  return false;
 }
 
 // Implementation closely follows the three-stage algorithm for finding roots of
@@ -226,14 +259,6 @@ class JenkinsTraubSolver {
   // Return true if a root was successfully found.
   bool ApplyLinearShiftToKPolynomial(const std::complex<double>& root,
                                      const int max_iterations);
-
-  // These methods determine whether the root finding has converged based on the
-  // machine roundoff error expected in evaluating the polynomials at the root.
-  bool HasQuadraticSequenceConverged(const VectorXd& quotient,
-                                     const std::complex<double>& root);
-  bool HasLinearSequenceConverged(const VectorXd& quotient,
-                                  const double root,
-                                  const double p_at_root);
 
   // Adds the root to the output variables.
   void AddRootToOutput(const double real, const double imag);
@@ -408,7 +433,7 @@ ConvergenceType JenkinsTraubSolver::ApplyFixedShiftToKPolynomial(
   Vector3d sigma_lambda = Vector3d::Zero();
   VectorXd k_polynomial_quotient, k_polynomial_remainder;
   for (int i = 0; i < max_iterations; i++) {
-   k_polynomial_ /= k_polynomial_(0);
+    k_polynomial_ /= k_polynomial_(0);
 
     // Divide the shifted polynomial by the quadratic polynomial.
     QuadraticSyntheticDivision(
@@ -488,7 +513,22 @@ bool JenkinsTraubSolver::ApplyQuadraticShiftToKPolynomial(
       k_polynomial_remainder;
   double poly_at_root(0), prev_poly_at_root(0), prev_v(0);
   bool tried_fixed_shifts = false;
+
+  // These containers maintain a history of the predicted roots. The convergence
+  // of the algorithm is determined by the convergence of the root value.
+  std::vector<std::complex<double> > roots1, roots2;
+  roots1.push_back(root);
+  roots2.push_back(std::conj(root));
   for (int i = 0; i < max_iterations; i++) {
+    // Terminate if the root evaluation is within our tolerance. This will
+    // return false if we do not have enough samples.
+    if (HasRootConverged(roots1) && HasRootConverged(roots2)) {
+      AddRootToOutput(roots1[1].real(), roots1[1].imag());
+      AddRootToOutput(roots2[1].real(), roots2[1].imag());
+      polynomial_ = polynomial_quotient;
+      return true;
+    }
+
     QuadraticSyntheticDivision(
         polynomial_, sigma_, &polynomial_quotient, &polynomial_remainder);
 
@@ -503,15 +543,6 @@ bool JenkinsTraubSolver::ApplyQuadraticShiftToKPolynomial(
     if (std::abs(std::abs(roots[0].real()) - std::abs(roots[1].real())) >
         kRootPairTolerance * std::abs(roots[1].real())) {
       return ApplyLinearShiftToKPolynomial(root, kMaxLinearShiftIterations);
-    }
-
-    // Test for convergence by determining if the error is within expected
-    // machine roundoff precision.
-    if (HasQuadraticSequenceConverged(polynomial_quotient, roots[0])) {
-      AddRootToOutput(roots[0].real(), roots[0].imag());
-      AddRootToOutput(roots[1].real(), roots[1].imag());
-      polynomial_ = polynomial_quotient;
-      return true;
     }
 
     // If the iteration is stalling at a root pair then apply a few fixed shift
@@ -539,6 +570,14 @@ bool JenkinsTraubSolver::ApplyQuadraticShiftToKPolynomial(
                                         k_polynomial_quotient);
     k_polynomial_ /= k_polynomial_(0);
     prev_poly_at_root = poly_at_root;
+
+    // Save the roots for convergence testing.
+    roots1.push_back(roots[0]);
+    roots2.push_back(roots[1]);
+    if (roots1.size() > 3) {
+      roots1.erase(roots1.begin());
+      roots2.erase(roots2.begin());
+    }
   }
 
   attempted_quadratic_shift_ = true;
@@ -562,14 +601,27 @@ bool JenkinsTraubSolver::ApplyLinearShiftToKPolynomial(
 
   VectorXd deflated_polynomial, deflated_k_polynomial;
   double polynomial_at_root, k_polynomial_at_root;
+
+  // This container maintains a history of the predicted roots. The convergence
+  // of the algorithm is determined by the convergence of the root value.
+  std::vector<double> roots;
+  roots.push_back(real_root);;
   for (int i = 0; i < max_iterations; i++) {
+    // Terminate if the root evaluation is within our tolerance. This will
+    // return false if we do not have enough samples.
+    if (HasRootConverged(roots)) {
+      AddRootToOutput(roots[1], 0);
+      polynomial_ = deflated_polynomial;
+      return true;
+    }
+
     const double prev_polynomial_at_root = polynomial_at_root;
     SyntheticDivisionAndEvaluate(
         polynomial_, real_root, &deflated_polynomial, &polynomial_at_root);
 
-    // Terminate if the root evaluation is within our tolerance.
-    if (HasLinearSequenceConverged(
-            deflated_polynomial, real_root, polynomial_at_root)) {
+    // If the root is exactly the root then end early. Otherwise, the k
+    // polynomial will be filled with inf or nans.
+    if (polynomial_at_root == 0) {
       AddRootToOutput(real_root, 0);
       polynomial_ = deflated_polynomial;
       return true;
@@ -581,12 +633,20 @@ bool JenkinsTraubSolver::ApplyLinearShiftToKPolynomial(
     k_polynomial_ = AddPolynomials(
         deflated_k_polynomial,
         -k_polynomial_at_root / polynomial_at_root * deflated_polynomial);
+
     k_polynomial_ /= k_polynomial_(0);
 
     // Compute the update for the root estimation.
     k_polynomial_at_root = EvaluatePolynomial(k_polynomial_, real_root);
     const double delta_root = polynomial_at_root / k_polynomial_at_root;
     real_root -= polynomial_at_root / k_polynomial_at_root;
+
+    // Save the root so that convergence can be measured. Only the 3 most
+    // recently root values are needed.
+    roots.push_back(real_root);
+    if (roots.size() > 3) {
+      roots.erase(roots.begin());
+    }
 
     // If the linear iterations appear to be stalling then we may have found a
     // double real root of the form (z - x^2). Attempt a quadratic variable
@@ -602,36 +662,6 @@ bool JenkinsTraubSolver::ApplyLinearShiftToKPolynomial(
 
   attempted_linear_shift_ = true;
   return ApplyQuadraticShiftToKPolynomial(root, kMaxQuadraticShiftIterations);
-}
-
-bool JenkinsTraubSolver::HasQuadraticSequenceConverged(
-    const VectorXd& quotient, const std::complex<double>& root) {
-  const double z = std::sqrt(std::abs(sigma_(2)));
-  const double t = -root.real() * b_;
-
-  double e = 2.0 * std::abs(quotient(0));
-  for (int i = 1; i < quotient.size(); i++) {
-    e = e * z + std::abs(quotient(i));
-  }
-  e = e * z + std::abs(a_ + t);
-  e *= 5.0 * mult_eps + 4.0 * sum_eps;
-  e = e -
-      (5.0 * mult_eps + 2.0 * sum_eps) * (std::abs(a_ + t) + std::abs(b_) * z);
-  e = e + 2.0 * sum_eps * std::abs(t);
-  return std::abs(a_ - b_ * root) < e;
-}
-
-bool JenkinsTraubSolver::HasLinearSequenceConverged(const VectorXd& quotient,
-                                                    const double root,
-                                                    const double p_at_root) {
-  double e = mult_eps / (sum_eps + mult_eps) * std::abs(quotient(0));
-  const double abs_root = std::abs(root);
-  for (int i = 0; i < quotient.size(); i++) {
-    e = e * abs_root + std::abs(quotient(i));
-  }
-  const double machine_precision =
-      (sum_eps + mult_eps) * e - mult_eps * std::abs(p_at_root);
-  return std::abs(p_at_root) < machine_precision;
 }
 
 void JenkinsTraubSolver::AddRootToOutput(const double real, const double imag) {
@@ -730,9 +760,9 @@ void JenkinsTraubSolver::ComputeZeroShiftKPolynomial() {
   const double polynomial_at_zero = polynomial_(polynomial_.size() - 1);
   const double k_at_zero = k_polynomial_(k_polynomial_.size() - 1);
 
-  k_polynomial_ = AddPolynomials(
-      k_polynomial_.head(k_polynomial_.size() - 1),
-      -k_at_zero / polynomial_at_zero * polynomial_.head(polynomial_.size() - 1));
+  k_polynomial_ = AddPolynomials(k_polynomial_.head(k_polynomial_.size() - 1),
+                                 -k_at_zero / polynomial_at_zero *
+                                     polynomial_.head(polynomial_.size() - 1));
 }
 
 // The iterations are computed with the following equation:
@@ -753,8 +783,9 @@ void JenkinsTraubSolver::UpdateKPolynomialWithQuadraticShift(
       (b_ * c_ - a_ * d_);
   VectorXd linear_polynomial(2);
   linear_polynomial(0) = 1.0;
-  linear_polynomial(1) = -(a_ * c_ + sigma_(1) * a_ * d_ + sigma_(2) * b_ * d_) /
-                         (b_ * c_ - a_ * d_);
+  linear_polynomial(1) =
+      -(a_ * c_ + sigma_(1) * a_ * d_ + sigma_(2) * b_ * d_) /
+      (b_ * c_ - a_ * d_);
   k_polynomial_ = AddPolynomials(
       coefficient_q_k * k_polynomial_quotient,
       MultiplyPolynomials(linear_polynomial, polynomial_quotient));
