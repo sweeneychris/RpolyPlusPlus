@@ -56,8 +56,8 @@ namespace {
 #endif
 
 // Machine precision constants.
-static const double mult_eps = 2e-16;
-static const double sum_eps = 2e-16;
+static const double mult_eps = std::numeric_limits<double>::epsilon();
+static const double sum_eps = std::numeric_limits<double>::epsilon();
 
 enum ConvergenceType{
   NO_CONVERGENCE = 0,
@@ -106,7 +106,8 @@ void SyntheticDivisionAndEvaluate(const VectorXd& polynomial,
   for (int i = 1; i < polynomial.size() - 1; i++) {
     (*quotient)(i) = polynomial(i) + (*quotient)(i - 1) * x;
   }
-  *eval = polynomial.reverse()(0) + quotient->reverse()(0) * x;
+  const VectorXd::ReverseReturnType& creverse_quotient = quotient->reverse();
+  *eval = polynomial.reverse()(0) + creverse_quotient(0) * x;
 }
 
 // Perform division of a polynomial by a quadratic factor. The quadratic divisor
@@ -134,11 +135,12 @@ void QuadraticSyntheticDivision(const VectorXd& polynomial,
                      (*quotient)(i - 1) * quadratic_divisor(1);
 
   }
+  const VectorXd::ReverseReturnType &creverse_quotient = quotient->reverse();
   (*remainder)(0) = polynomial.reverse()(1) -
-                    quadratic_divisor(1) * quotient->reverse()(0) -
-                    quadratic_divisor(2) * quotient->reverse()(1);
+                    quadratic_divisor(1) * creverse_quotient(0) -
+                    quadratic_divisor(2) * creverse_quotient(1);
   (*remainder)(1) =
-      polynomial.reverse()(0) - quadratic_divisor(2) * quotient->reverse()(0);
+      polynomial.reverse()(0) - quadratic_divisor(2) * creverse_quotient(0);
 }
 
 // Determines whether the iteration has converged by examining the three most
@@ -644,9 +646,13 @@ void JenkinsTraubSolver::AddRootToOutput(const double real, const double imag) {
 
 void JenkinsTraubSolver::RemoveZeroRoots() {
   int num_zero_roots = 0;
-  while (polynomial_.reverse()(num_zero_roots) == 0) {
+
+  const VectorXd::ReverseReturnType& creverse_polynomial =
+      polynomial_.reverse();
+  while (creverse_polynomial(num_zero_roots) == 0) {
     ++num_zero_roots;
   }
+
   // The output roots have 0 as the default value so there is no need to
   // explicitly add the zero roots.
   polynomial_ = polynomial_.head(polynomial_.size() - num_zero_roots).eval();
@@ -721,8 +727,9 @@ void JenkinsTraubSolver::ComputeZeroShiftKPolynomial() {
   // Evaluating the polynomial at zero is equivalent to the constant term
   // (i.e. the last coefficient). Note that reverse() is an expression and does
   // not actually reverse the vector elements.
-  const double polynomial_at_zero = polynomial_.reverse()(0);
-  const double k_at_zero = k_polynomial_.reverse()(0);
+  const double polynomial_at_zero = polynomial_(polynomial_.size() - 1);
+  const double k_at_zero = k_polynomial_(k_polynomial_.size() - 1);
+
   k_polynomial_ = AddPolynomials(
       k_polynomial_.head(k_polynomial_.size() - 1),
       -k_at_zero / polynomial_at_zero * polynomial_.head(polynomial_.size() - 1));
@@ -751,7 +758,7 @@ void JenkinsTraubSolver::UpdateKPolynomialWithQuadraticShift(
   k_polynomial_ = AddPolynomials(
       coefficient_q_k * k_polynomial_quotient,
       MultiplyPolynomials(linear_polynomial, polynomial_quotient));
-  k_polynomial_.reverse()(0) += b_;
+  k_polynomial_(k_polynomial_.size() - 1) += b_;
 }
 
 // Using a bit of algebra, the update of sigma(z) can be computed from the
@@ -765,10 +772,14 @@ VectorXd JenkinsTraubSolver::ComputeNextSigma() {
   const double u = sigma_(1);
   const double v = sigma_(2);
 
-  const double b1 = -k_polynomial_.reverse()(0) / polynomial_.reverse()(0);
-  const double b2 =
-      -(k_polynomial_.reverse()(1) + b1 * polynomial_.reverse()(1)) /
-      polynomial_.reverse()(0);
+  const VectorXd::ReverseReturnType& creverse_k_polynomial =
+      k_polynomial_.reverse();
+  const VectorXd::ReverseReturnType& creverse_polynomial =
+      polynomial_.reverse();
+
+  const double b1 = -creverse_k_polynomial(0) / creverse_polynomial(0);
+  const double b2 = -(creverse_k_polynomial(1) + b1 * creverse_polynomial(1)) /
+                    creverse_polynomial(0);
 
   const double a1 = b_* c_ - a_ * d_;
   const double a2 = a_ * c_ + u * a_ * d_ + v * b_* d_;
