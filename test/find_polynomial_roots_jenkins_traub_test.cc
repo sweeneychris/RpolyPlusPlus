@@ -244,4 +244,56 @@ TEST(Polynomial, JenkinsTraubManyRoots) {
   }
 }
 
+TEST(Polynomial, HardPolynomial1) {
+  Eigen::VectorXd polynomial(11);
+  Eigen::VectorXd roots_re(10);
+  Eigen::VectorXd roots_im(10);
+
+  polynomial(10) = -52412.8655144021;
+  polynomial(9) = -28342.548095425875;
+  polynomial(8) = 20409.84088622263;
+  polynomial(7) = 25844.743360023815;
+  polynomial(6) = 11474.831044766257;
+  polynomial(5) = 1909.2968243041091;
+  polynomial(4) = -692.3579951742573;
+  polynomial(3) = -562.5089223272787;
+  polynomial(2) = -105.89974320540716;
+  polynomial(1) = 18.62488243410351;
+  polynomial(0) = 5.576312106019016;
+
+  EXPECT_TRUE(
+      FindPolynomialRootsJenkinsTraub(polynomial, &roots_re, &roots_im));
+}
+
+TEST(Polynomial, HardPolynomial2) {
+  Eigen::VectorXd polynomial(20);
+  Eigen::VectorXd roots_re(19);
+  Eigen::VectorXd roots_im(19);
+
+  polynomial(19) = -3.3501738067312306e8;
+  polynomial(18) = -6.884086124142883e8;
+  polynomial(17) = 7.702813653628246e8;
+  polynomial(16) = 8.451429594854779e8;
+  polynomial(15) = -7.822417923012168e8;
+  polynomial(14) = -2.0621500003041908e8;
+  polynomial(13) = 2.71193932055516e8;
+  polynomial(12) = 2191206.652049609;
+  polynomial(11) = -4.3103846059516795e7;
+  polynomial(10) = 3893518.9815099635;
+  polynomial(9) = 4037788.101972703;
+  polynomial(8) = -541891.2574823081;
+  polynomial(7) = -260979.552665553;
+  polynomial(6) = 38001.29427556511;
+  polynomial(5) = 12074.712839195976;
+  polynomial(4) = -1512.0183242937462;
+  polynomial(3) = -388.5049059868163;
+  polynomial(2) = 27.301047297669705;
+  polynomial(1) = 6.8768381102442575;
+  polynomial(0) = 0;
+
+  EXPECT_TRUE(
+      FindPolynomialRootsJenkinsTraub(polynomial, &roots_re, &roots_im));
+}
+
+
 }  // namespace rpoly_plus_plus
