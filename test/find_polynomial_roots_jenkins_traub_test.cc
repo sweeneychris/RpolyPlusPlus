@@ -304,7 +304,6 @@ TEST(Polynomial, JenkinsTraub4Roots1) {
 
 // This test polynomial was provided by a user.
 TEST(Polynomial, JenkinsTraub4Roots2) {
-  static const double kEpsilonVeryLoose = 1e-2;
   static const int N = 4;
   for (int j = 0; j < 10000; ++j) {
     VectorXd poly = ConstantPolynomial(1.23);
@@ -327,7 +326,7 @@ TEST(Polynomial, JenkinsTraub4Roots2) {
 
     EXPECT_EQ(real.size(), N);
     for (int i = 0; i < real.size(); i++) {
-      EXPECT_NEAR(EvaluatePolynomial(poly, real[i]), 0, kEpsilonVeryLoose);
+      EXPECT_NEAR(EvaluatePolynomial(poly, real[i]), 0, kEpsilonLoose);
     }
   }
 }
