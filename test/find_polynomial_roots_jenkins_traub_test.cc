@@ -47,8 +47,8 @@ using Eigen::VectorXd;
 namespace {
 
 // For IEEE-754 doubles, machine precision is about 2e-16.
-const double kEpsilon = 1e-12;
-const double kEpsilonLoose = 1e-10;
+const double kEpsilon = 1e-10;
+const double kEpsilonLoose = 1e-8;
 
 // Return the constant polynomial p(x) = 1.23.
 VectorXd ConstantPolynomial(double value) {
@@ -295,5 +295,41 @@ TEST(Polynomial, HardPolynomial2) {
       FindPolynomialRootsJenkinsTraub(polynomial, &roots_re, &roots_im));
 }
 
+// This test polynomial was provided by a user.
+TEST(Polynomial, JenkinsTraub4Roots1) {
+  const double roots[4] = {1.0843989379558703, 1.0844294564653463,
+                           1.3072756126590779, 1.4643848994415114};
+  RunPolynomialTestRealRoots(roots, true, false, kEpsilonLoose);
+}
+
+// This test polynomial was provided by a user.
+TEST(Polynomial, JenkinsTraub4Roots2) {
+  static const double kEpsilonVeryLoose = 1e-2;
+  static const int N = 4;
+  for (int j = 0; j < 10000; ++j) {
+    VectorXd poly = ConstantPolynomial(1.23);
+    VectorXd roots = VectorXd::Random(N);
+    for (int i = 0; i < N; ++i) {
+        roots(i) *= 0.5;
+        roots(i) += 1.0;
+    }
+
+    roots = SortVector(roots);
+
+    for (int i = 0; i < N; ++i) {
+      poly = AddRealRoot(poly, roots[i]);
+    }
+
+    VectorXd real;
+    const bool success = FindPolynomialRootsJenkinsTraub(poly, &real, NULL);
+    EXPECT_EQ(success, true);
+    real = SortVector(real);
+
+    EXPECT_EQ(real.size(), N);
+    for (int i = 0; i < real.size(); i++) {
+      EXPECT_NEAR(EvaluatePolynomial(poly, real[i]), 0, kEpsilonVeryLoose);
+    }
+  }
+}
 
 }  // namespace rpoly_plus_plus

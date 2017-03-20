@@ -37,6 +37,7 @@
 
 #include <cmath>
 #include <complex>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <vector>
@@ -60,6 +61,8 @@ namespace {
 // Machine precision constants.
 static const double mult_eps = std::numeric_limits<double>::epsilon();
 static const double sum_eps = std::numeric_limits<double>::epsilon();
+static const double kAbsoluteTolerance = 1e-14;
+static const double kRelativeTolerance = 1e-10;
 
 enum ConvergenceType{
   NO_CONVERGENCE = 0,
@@ -168,9 +171,6 @@ bool HasConverged(const T& sequence) {
 template <typename T>
 bool HasRootConverged(const std::vector<T>& roots) {
   static const double kRootMagnitudeTolerance = 1e-8;
-  static const double kAbsoluteTolerance = 1e-14;
-  static const double kRelativeTolerance = 1e-10;
-
   if (roots.size() != 3) {
     return false;
   }
@@ -621,7 +621,7 @@ bool JenkinsTraubSolver::ApplyLinearShiftToKPolynomial(
 
     // If the root is exactly the root then end early. Otherwise, the k
     // polynomial will be filled with inf or nans.
-    if (polynomial_at_root == 0) {
+    if (std::abs(polynomial_at_root) <= kAbsoluteTolerance) {
       AddRootToOutput(real_root, 0);
       polynomial_ = deflated_polynomial;
       return true;
