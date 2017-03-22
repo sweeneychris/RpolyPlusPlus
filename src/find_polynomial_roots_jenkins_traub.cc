@@ -323,7 +323,7 @@ class JenkinsTraubSolver {
   // nearly equal since the root pairs are complex conjugates. This tolerance
   // measures how much the real values may diverge before consider the quadratic
   // shift to be failed.
-  static const double kRootPairTolerance = 0.01;
+  static constexpr double kRootPairTolerance = 0.01;
 };
 
 bool JenkinsTraubSolver::ExtractRoots() {
