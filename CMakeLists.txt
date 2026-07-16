@@ -69,6 +69,71 @@ SET(RPOLY_PLUS_PLUS_SRCS
 ADD_LIBRARY(rpoly_plus_plus SHARED ${RPOLY_PLUS_PLUS_SRCS})
 TARGET_LINK_LIBRARIES(rpoly_plus_plus PUBLIC Eigen3::Eigen)
 
+# Optional accuracy/speed evaluation harness (off by default).
+OPTION(BUILD_BENCHMARK "Build the accuracy/speed benchmark" OFF)
+IF (BUILD_BENCHMARK)
+  ADD_EXECUTABLE(rpoly_benchmark benchmark/rpoly_benchmark.cc)
+  TARGET_LINK_LIBRARIES(rpoly_benchmark PRIVATE rpoly_plus_plus Eigen3::Eigen)
+
+  # Optional baseline solver: the original RPOLY (Jenkins-Traub reference). Drop
+  # David Binner's RPOLY_AK1 C++ port at third_party/rpoly/rpoly_ak1.cpp (with
+  # its demo main() removed) -- see third_party/rpoly/README.md.
+  OPTION(WITH_RPOLY "Compare against RPOLY (third_party/rpoly/rpoly_ak1.cpp)" OFF)
+  IF (WITH_RPOLY)
+    IF (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/rpoly/rpoly_ak1.cpp")
+      MESSAGE(FATAL_ERROR
+        "WITH_RPOLY=ON but third_party/rpoly/rpoly_ak1.cpp is missing. "
+        "See third_party/rpoly/README.md.")
+    ENDIF ()
+    TARGET_SOURCES(rpoly_benchmark PRIVATE third_party/rpoly/rpoly_ak1.cpp)
+    TARGET_COMPILE_DEFINITIONS(rpoly_benchmark PRIVATE WITH_RPOLY)
+    # RPOLY_AK1 ships with a demo int main(); rename it at compile time so it
+    # does not collide with the benchmark's main. This means the vendored file
+    # can be dropped in verbatim -- no need to hand-edit out its main().
+    SET_SOURCE_FILES_PROPERTIES(third_party/rpoly/rpoly_ak1.cpp PROPERTIES
+      COMPILE_DEFINITIONS "main=rpoly_ak1_disabled_main")
+  ENDIF ()
+
+  # Optional high-accuracy oracle: MPSolve (linked, not vendored; GPL). See
+  # third_party/mpsolve/README.md for building libmps on top of GMP.
+  OPTION(WITH_MPSOLVE "Compare against MPSolve as a high-accuracy oracle" OFF)
+  IF (WITH_MPSOLVE)
+    SET(MPSOLVE_ROOT "" CACHE PATH
+      "Install prefix of MPSolve (contains include/mps and lib/libmps)")
+    FIND_PATH(MPS_INCLUDE_DIR mps/mps.h HINTS "${MPSOLVE_ROOT}/include")
+    FIND_LIBRARY(MPS_LIBRARY NAMES mps HINTS "${MPSOLVE_ROOT}/lib")
+    FIND_LIBRARY(GMP_LIBRARY NAMES gmp HINTS "${MPSOLVE_ROOT}/lib")
+    IF (NOT MPS_INCLUDE_DIR OR NOT MPS_LIBRARY OR NOT GMP_LIBRARY)
+      MESSAGE(FATAL_ERROR
+        "WITH_MPSOLVE=ON but libmps/GMP were not found. "
+        "Pass -DMPSOLVE_ROOT=<prefix>; see third_party/mpsolve/README.md.")
+    ENDIF ()
+    TARGET_INCLUDE_DIRECTORIES(rpoly_benchmark PRIVATE "${MPS_INCLUDE_DIR}")
+    TARGET_LINK_LIBRARIES(rpoly_benchmark PRIVATE "${MPS_LIBRARY}" "${GMP_LIBRARY}")
+    TARGET_COMPILE_DEFINITIONS(rpoly_benchmark PRIVATE WITH_MPSOLVE)
+  ENDIF ()
+
+  # Heap-free probe variant: compile the benchmark together with the solver
+  # sources so Eigen's runtime allocation gate is active in every translation
+  # unit (the solver's own allocations included). The gate is portable -- it
+  # uses EIGEN_RUNTIME_NO_MALLOC plus a throwing eigen_assert
+  # (benchmark/eigen_malloc_gate.h) rather than glibc malloc interposition --
+  # so the heap column is populated on macOS as well as Linux.
+  ADD_EXECUTABLE(rpoly_benchmark_heapcheck
+    benchmark/rpoly_benchmark.cc
+    ${RPOLY_PLUS_PLUS_SRCS})
+  TARGET_COMPILE_DEFINITIONS(rpoly_benchmark_heapcheck
+    PRIVATE RPOLY_BENCH_NO_MALLOC_GATE)
+  # Force-include the gate header ahead of every source (including the solver
+  # translation units) so EIGEN_RUNTIME_NO_MALLOC is defined before any Eigen
+  # header is seen. -include is supported by GCC and Clang.
+  IF (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    TARGET_COMPILE_OPTIONS(rpoly_benchmark_heapcheck PRIVATE
+      -include "${CMAKE_CURRENT_SOURCE_DIR}/benchmark/eigen_malloc_gate.h")
+  ENDIF ()
+  TARGET_LINK_LIBRARIES(rpoly_benchmark_heapcheck PRIVATE Eigen3::Eigen)
+ENDIF ()
+
 IF (CMAKE_BUILD_TYPE STREQUAL "Debug")
   MESSAGE("\n=================================================================================")
   MESSAGE("\n-- Build type: Debug. Performance will be terrible!")
