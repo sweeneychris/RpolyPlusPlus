@@ -1,0 +1,21 @@
+# Out-of-source build directory (see README).
+/build/
+
+# Common CMake artifacts if configured in-tree.
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+
+# Editor / OS cruft.
+.DS_Store
+*~
+
+# Third-party solver sources are fetched by the user (see third_party/*/README.md),
+# not vendored here. Keep the READMEs; ignore the downloaded code.
+/third_party/rpoly/*.cpp
+/third_party/rpoly/*.f
+
+# Scratch directory of imported patches (not part of the library).
+/tmp_patch/

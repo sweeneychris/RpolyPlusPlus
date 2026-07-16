@@ -48,7 +48,14 @@ namespace rpoly_plus_plus {
 // exaggerate the roots. Once a root is found (or in the real-polynomial case, a
 // pair of roots) then it is divided from the polynomial and the process is
 // repeated.
-bool FindPolynomialRootsJenkinsTraub(const Eigen::VectorXd& polynomial,
+#if defined(__cplusplus) && __cplusplus >= 201703L
+#define RPOLY_NODISCARD [[nodiscard]]
+#else
+#define RPOLY_NODISCARD
+#endif
+
+// Returns false if the roots could not be extracted; callers must check.
+RPOLY_NODISCARD bool FindPolynomialRootsJenkinsTraub(const Eigen::VectorXd& polynomial,
                                      Eigen::VectorXd* real_roots,
                                      Eigen::VectorXd* complex_roots);
 
