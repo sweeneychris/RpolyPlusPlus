@@ -35,6 +35,7 @@
 
 #include <Eigen/Core>
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <iomanip>
@@ -43,6 +44,7 @@
 #include <vector>
 
 #include "src/polynomial.h"
+#include "src/root_polishing.h"
 
 namespace rpoly_plus_plus {
 
@@ -132,8 +134,20 @@ void FindQuadraticPolynomialRoots(const double a,
                                   const double b,
                                   const double c,
                                   std::complex<double>* roots) {
-  const double D = b * b - 4 * a * c;
-  const double sqrt_D = std::sqrt(std::abs(D));
+  double D = b * b - 4 * a * c;
+  double sqrt_D = std::sqrt(std::abs(D));
+  if (!std::isfinite(D)) {
+    // b*b or 4ac overflowed (D is inf, or NaN if both did) although the
+    // roots may be representable (e.g. x^2 + 1e200 x + 1). Rare, so the
+    // common path above stays branch-light: recompute with the terms scaled
+    // by s ~ max(|b|, sqrt|4ac|).
+    const double s = std::max(std::abs(b),
+                              2.0 * std::sqrt(std::abs(a)) *
+                                  std::sqrt(std::abs(c)));
+    const double bs = b / s;
+    D = bs * bs - 4.0 * (a / s) * (c / s);
+    sqrt_D = s * std::sqrt(std::abs(D));
+  }
 
   // Real roots.
   if (D >= 0) {
@@ -983,8 +997,6 @@ bool JenkinsTraubSolver<Vec>::ApplyLinearShiftToKPolynomial(
     SyntheticDivisionAndEvaluate(
         polynomial_, real_root, &deflated_polynomial_, &polynomial_at_root);
 
-    // If the root is exactly the root then end early. Otherwise, the k
-    // polynomial will be filled with inf or nans.
     // O(1) tracking of the best iterate seen, for the exhaustion fallback
     // (near a multiple root the step sequence stalls at a linear rate long
     // before Ward's step tolerance is met, while |P(s)| reaches the
@@ -993,7 +1005,13 @@ bool JenkinsTraubSolver<Vec>::ApplyLinearShiftToKPolynomial(
       best_real_metric_ = std::abs(polynomial_at_root);
       best_real_root_ = real_root;
     }
-    if (std::abs(polynomial_at_root) <= kAbsoluteTolerance) {
+    // If the root is (numerically) exactly the root then end early. Otherwise,
+    // the k polynomial will be filled with inf or nans. The absolute test is
+    // only a cheap pre-filter: on its own it accepts nearly any point when
+    // the roots are small (|P| ~ 1e-15 throughout a cluster of roots near
+    // 1e-5), so the scale-aware residual gate must confirm it.
+    if (std::abs(polynomial_at_root) <= kAbsoluteTolerance &&
+        ResidualAcceptable(polynomial_, real_root)) {
       AddRootToOutput(real_root, 0);
       polynomial_ = deflated_polynomial_;
       return true;
@@ -1056,63 +1074,29 @@ void JenkinsTraubSolver<Vec>::PolishRoots() {
   }
   for (int r = 0; r < num_solved_roots_; ++r) {
     if ((*complex_roots_)(r) == 0.0) {
-      // Real root: polish on the real axis with real arithmetic. A complex
-      // Horner pass costs ~4 real multiplies per coefficient; this real pass
-      // costs one, so it is ~4x cheaper -- and the root stays exactly real.
-      double x = (*real_roots_)(r);
-      for (int it = 0; it < 2; ++it) {
-        double p = 0.0, dp = 0.0;
-        for (Eigen::Index i = 0; i < n; ++i) {
-          dp = dp * x + p;
-          p = p * x + original_polynomial_(i);
-        }
-        if (dp == 0.0) break;
-        const double x_new = x - p / dp;
-        // Keep the step only if the residual strictly decreases.
-        double p_new = 0.0;
-        for (Eigen::Index i = 0; i < n; ++i) {
-          p_new = p_new * x_new + original_polynomial_(i);
-        }
-        if (std::abs(p_new) < std::abs(p)) {
-          x = x_new;
-        } else {
-          break;
-        }
-      }
-      (*real_roots_)(r) = x;
+      (*real_roots_)(r) = internal::PolishRoot(original_polynomial_,
+                                               (*real_roots_)(r));
       continue;
     }
-
-    // Complex root: polish with complex arithmetic. Conjugate pairs are
-    // emitted consecutively; polish the first of the two and mirror, so the
-    // pair stays exactly conjugate.
-    std::complex<double> z((*real_roots_)(r), (*complex_roots_)(r));
+    // Complex root. Conjugate pairs are emitted consecutively; polish the
+    // first of the two and mirror, so the pair stays exactly conjugate.
+    const std::complex<double> z0((*real_roots_)(r), (*complex_roots_)(r));
     const bool is_pair =
         r + 1 < num_solved_roots_ &&
-        (*real_roots_)(r + 1) == z.real() &&
-        (*complex_roots_)(r + 1) == -z.imag();
-    for (int it = 0; it < 2; ++it) {
-      std::complex<double> p = 0.0, dp = 0.0;
-      for (Eigen::Index i = 0; i < n; ++i) {
-        dp = dp * z + p;
-        p = p * z + original_polynomial_(i);
-      }
-      if (dp == std::complex<double>(0.0, 0.0)) break;
-      const std::complex<double> z_new = z - p / dp;
-      // Keep the step only if the residual strictly decreases.
-      std::complex<double> p_new = 0.0;
-      for (Eigen::Index i = 0; i < n; ++i) {
-        p_new = p_new * z_new + original_polynomial_(i);
-      }
-      if (std::abs(p_new) < std::abs(p)) {
-        z = z_new;
-      } else {
-        break;
-      }
-    }
+        (*real_roots_)(r + 1) == z0.real() &&
+        (*complex_roots_)(r + 1) == -z0.imag();
+    const std::complex<double> z =
+        internal::PolishRoot(original_polynomial_, z0);
     (*real_roots_)(r) = z.real();
     (*complex_roots_)(r) = z.imag();
-    if (is_pair) {
+    double x;
+    if (is_pair && internal::IsSplitRealDoubleRoot(original_polynomial_, z, &x)) {
+      (*real_roots_)(r) = x;
+      (*complex_roots_)(r) = 0.0;
+      (*real_roots_)(r + 1) = x;
+      (*complex_roots_)(r + 1) = 0.0;
+      ++r;
+    } else if (is_pair) {
       (*real_roots_)(r + 1) = z.real();
       (*complex_roots_)(r + 1) = -z.imag();
       ++r;
@@ -1194,7 +1178,15 @@ double JenkinsTraubSolver<Vec>::ComputeRootRadius() {
   // Cauchy polynomial: |a_0| x^n + ... + |a_{n-1}| x - |a_n|. Solve for its
   // unique positive zero with Newton, evaluating P and P' in one fused pass.
   const Eigen::Index n = polynomial_.size();
+  // Start at 1, or for small roots at ~the geometric mean of the root
+  // magnitudes, |a_n / a_0|^(1/deg), rounded to a power of two (ilogb/ldexp,
+  // no pow). From 1, Newton descends to tiny roots only linearly (a factor of
+  // ~(deg-1)/deg per step) and would hit kMaxIterations far above the root.
   double root = 1.0;
+  const double ratio = std::abs(polynomial_(n - 1) / polynomial_(0));
+  if (ratio > 0.0 && ratio < 1.0) {
+    root = std::ldexp(1.0, std::ilogb(ratio) / static_cast<int>(n - 1));
+  }
   for (int it = 0; it < kMaxIterations; ++it) {
     double p = std::abs(polynomial_(0));
     double dp = 0.0;
@@ -1206,7 +1198,8 @@ double JenkinsTraubSolver<Vec>::ComputeRootRadius() {
     }
     const double prev = root;
     root -= p / dp;
-    if (std::abs(prev - root) < kEpsilon) {
+    // Relative below 1: an absolute 1e-2 stops at ~0.05 for roots ~1e-10.
+    if (std::abs(prev - root) < kEpsilon * std::min(root, 1.0)) {
       break;
     }
   }
