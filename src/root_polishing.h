@@ -110,6 +110,56 @@ T PolishRoot(const Eigen::MatrixBase<Derived>& polynomial, T x) {
   return x;
 }
 
+// A real double root a is ill-conditioned: rounding noise delta in P splits it
+// into a +/- sqrt(-delta / k), k = P''(a)/2, which is a complex pair whenever
+// delta happens to have the wrong sign. This decides whether the computed pair
+// `z`, conj(z) is such a split double root. If so, it stores the double root in
+// `*x` and returns true.
+//
+// The test does not use a tolerance on Im(z). It asks whether a real x exists
+// with P(x) and P'(x) both inside their a-priori rounding bounds (Higham
+// §5.1, as in DerivativeIsNoise). In that case a perturbation of P at
+// rounding level has an exact real double root at x, so the data cannot tell
+// it apart from the pair. A genuine pair a +/- bi has P(a) ~ b^2 * P''(a)/2
+// and is rejected once b is above the noise-cluster scale. x is found with a
+// few Newton steps on P' starting from Re(z). A double root of P is a simple
+// root of P', so these steps are well conditioned.
+//
+// Cost: the cheap pre-filter on Im(z) rejects ordinary pairs, so this only
+// runs for pairs that are nearly real.
+template <typename Derived>
+bool IsSplitRealDoubleRoot(const Eigen::MatrixBase<Derived>& polynomial,
+                           const std::complex<double>& z, double* x) {
+  constexpr double kEps = std::numeric_limits<double>::epsilon();
+  // sqrt(eps) is the natural split scale; 1e-4 leaves room for large n and
+  // badly scaled P. The rigorous decision is the residual test below.
+  if (!(std::abs(z.imag()) <= 1e-4 * std::abs(z.real()))) return false;
+  const Eigen::Index n = polynomial.size();
+  const double noise = 4.0 * static_cast<double>(n) * kEps;
+  double t = z.real();
+  // Up to kSteps Newton steps; the iterate after each step is tested.
+  constexpr int kSteps = 4;
+  for (int it = 0; it <= kSteps; ++it) {
+    // Horner accumulates p, p' and p''/2 (the latter as half_ddp).
+    double p = 0.0, dp = 0.0, half_ddp = 0.0, abs_p = 0.0, abs_dp = 0.0;
+    const double abs_t = std::abs(t);
+    for (Eigen::Index i = 0; i < n; ++i) {
+      half_ddp = half_ddp * t + dp;
+      dp = dp * t + p;
+      p = p * t + polynomial(i);
+      abs_dp = abs_dp * abs_t + abs_p;
+      abs_p = abs_p * abs_t + std::abs(polynomial(i));
+    }
+    if (std::abs(p) <= noise * abs_p && std::abs(dp) <= noise * abs_dp) {
+      *x = t;
+      return true;
+    }
+    if (it == kSteps || half_ddp == 0.0) return false;
+    t -= dp / (2.0 * half_ddp);
+  }
+  return false;
+}
+
 }  // namespace internal
 }  // namespace rpoly_plus_plus
 

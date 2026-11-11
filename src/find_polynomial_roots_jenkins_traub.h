@@ -55,6 +55,13 @@ namespace rpoly_plus_plus {
 #endif
 
 // Returns false if the roots could not be extracted; callers must check.
+//
+// Multiple roots are ill-conditioned: a root of multiplicity m is only
+// determined to about eps^(1/m) relative accuracy (~1e-8 for a double root),
+// so a double root may come back as two nearby real roots. A complex pair that
+// is indistinguishable from a real double root within rounding error (P and
+// P' both vanish to working precision at a real point) is returned as that
+// real double root, with imaginary parts exactly 0.
 RPOLY_NODISCARD bool FindPolynomialRootsJenkinsTraub(const Eigen::VectorXd& polynomial,
                                      Eigen::VectorXd* real_roots,
                                      Eigen::VectorXd* complex_roots);

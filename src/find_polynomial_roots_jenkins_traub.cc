@@ -1089,7 +1089,14 @@ void JenkinsTraubSolver<Vec>::PolishRoots() {
         internal::PolishRoot(original_polynomial_, z0);
     (*real_roots_)(r) = z.real();
     (*complex_roots_)(r) = z.imag();
-    if (is_pair) {
+    double x;
+    if (is_pair && internal::IsSplitRealDoubleRoot(original_polynomial_, z, &x)) {
+      (*real_roots_)(r) = x;
+      (*complex_roots_)(r) = 0.0;
+      (*real_roots_)(r + 1) = x;
+      (*complex_roots_)(r + 1) = 0.0;
+      ++r;
+    } else if (is_pair) {
       (*real_roots_)(r + 1) = z.real();
       (*complex_roots_)(r + 1) = -z.imag();
       ++r;

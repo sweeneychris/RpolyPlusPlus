@@ -414,5 +414,96 @@ TEST(RootPolishing, SolverComplexMultipleRootFamilies) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Real double roots must come back real, not as a near-real complex pair.
+// ---------------------------------------------------------------------------
+
+// Rounding noise of size delta splits a double root a into
+// a +/- sqrt(-delta / k), k = P''(a)/2. That is a complex pair whenever delta
+// has the "wrong" sign, which happened for ~10% of the family below (e.g.
+// (x+10)^2 (x+9)(x+7) gave -10 +/- 6.3e-7i). Callers that pick out real roots
+// with im == 0 then silently lost both of them.
+void ExpectAllRootsReal(const std::vector<double>& roots, double scale) {
+  const VectorXd poly = ScaleRoots(FromRealRoots(roots), scale);
+  VectorXd re, im;
+  ASSERT_TRUE(FindPolynomialRootsJenkinsTraub(poly, &re, &im))
+      << "poly = " << poly.transpose();
+  for (Eigen::Index i = 0; i < im.size(); ++i) {
+    if (im(i) != 0.0) {
+      ADD_FAILURE() << "real root returned as complex " << re(i) << " + "
+                    << im(i) << "i; poly = " << poly.transpose();
+      return;
+    }
+  }
+}
+
+TEST(RootPolishing, SolverReturnsRealDoubleRootsAsReal) {
+  for (const double scale : {1.0, 1e-6, 1e6}) {
+    for (int a = -kRange; a <= kRange; ++a) {
+      for (int b = -kRange; b <= kRange; ++b) {
+        for (int c = b + 1; c <= kRange; ++c) {
+          if (a == b || a == c) continue;
+          ExpectAllRootsReal({1.0 * a, 1.0 * a, 1.0 * b, 1.0 * c}, scale);
+          if (b != 0 && c != 0) {
+            ExpectAllRootsReal({1.0 * a, 1.0 * a, 1.0 * b, 1.0 * b, 1.0 * c},
+                               scale);
+          }
+        }
+      }
+    }
+  }
+}
+
+// The double-root decision must not swallow genuine complex pairs. For the
+// exact pair a +/- bi of (x^2 - 2ax + a^2 + b^2)(x - c)(x - d), the residual
+// at the real critical point is b^2 * |(a-c)(a-d)|, so the pair is only
+// indistinguishable from a double root when b is below the noise-cluster
+// scale sqrt(eps * q(|a|) / |(a-c)(a-d)|). Above it (with margin) the pair
+// must be kept. Below it, a split double root must be recognized.
+TEST(RootPolishing, SplitDoubleRootDecisionRespectsNoiseScale) {
+  using internal::IsSplitRealDoubleRoot;
+  int kept = 0, merged = 0;
+  for (int a = -kRange; a <= kRange; ++a) {
+    if (a == 0) continue;
+    for (int c = -kRange; c <= kRange; ++c) {
+      for (int d = c + 1; d <= kRange; ++d) {
+        if (a == c || a == d) continue;
+        const VectorXd dbl = FromRealRoots({1.0 * a, 1.0 * a, 1.0 * c, 1.0 * d});
+        double q = 0.0;
+        for (Eigen::Index i = 0; i < dbl.size(); ++i) {
+          q = q * std::abs(a) + std::abs(dbl(i));
+        }
+        const double cluster =
+            std::sqrt(kEps * q / std::abs((a - c) * (a - d)));
+        double x = 0.0;
+        // Split double root, as the solver produces it (measured splits are
+        // up to ~6x the cluster scale), with a slightly-off real part.
+        const Complex split(a + 1e-11 * a, 4.0 * cluster);
+        if (IsSplitRealDoubleRoot(dbl, split, &x)) {
+          ++merged;
+          EXPECT_NEAR(x, a, 1e-12 * std::abs(a));
+        } else {
+          ADD_FAILURE() << "split double root " << split << " not merged; "
+                        << "poly = " << dbl.transpose();
+        }
+        // Genuine pair well outside the noise cluster.
+        for (const double b : {100.0 * cluster, 1e-4 * std::abs(a)}) {
+          const VectorXd pair = FromRoots(
+              {Complex(a, b), Complex(a, -b), Complex(c), Complex(d)});
+          if (IsSplitRealDoubleRoot(pair, Complex(a, b), &x)) {
+            ADD_FAILURE() << "genuine pair " << a << " +/- " << b
+                          << "i merged into a double root; poly = "
+                          << pair.transpose();
+          } else {
+            ++kept;
+          }
+        }
+      }
+    }
+  }
+  EXPECT_GT(merged, 0);
+  EXPECT_GT(kept, 0);
+}
+
 }  // namespace
 }  // namespace rpoly_plus_plus
