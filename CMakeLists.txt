@@ -177,6 +177,7 @@ IF (BUILD_TESTING)
 
   GTEST(find_polynomial_roots_jenkins_traub)
   GTEST(root_polishing)
+  GTEST(scale_robustness)
 
   # The same tests with the solver compiled without floating-point contraction
   # (no fused multiply-add). Whether a result is FMA-fused changes its rounding
@@ -188,6 +189,7 @@ IF (BUILD_TESTING)
       test/test_main.cc
       test/find_polynomial_roots_jenkins_traub_test.cc
       test/root_polishing_test.cc
+      test/scale_robustness_test.cc
       ${RPOLY_PLUS_PLUS_SRCS})
     TARGET_COMPILE_OPTIONS(rpoly_nofma_test PRIVATE -ffp-contract=off)
     TARGET_LINK_LIBRARIES(rpoly_nofma_test GTest::gtest Eigen3::Eigen)
