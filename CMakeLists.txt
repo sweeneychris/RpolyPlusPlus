@@ -176,4 +176,22 @@ IF (BUILD_TESTING)
   ENDMACRO (GTEST)
 
   GTEST(find_polynomial_roots_jenkins_traub)
+  GTEST(root_polishing)
+
+  # The same tests with the solver compiled without floating-point contraction
+  # (no fused multiply-add). Whether a result is FMA-fused changes its rounding
+  # noise; some numerical failures (e.g. root polishing at multiple roots) only
+  # reproduce one way. Default Clang on arm64 fuses and GCC on x86-64 does not,
+  # so run both regardless of the host.
+  IF (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    ADD_EXECUTABLE(rpoly_nofma_test
+      test/test_main.cc
+      test/find_polynomial_roots_jenkins_traub_test.cc
+      test/root_polishing_test.cc
+      ${RPOLY_PLUS_PLUS_SRCS})
+    TARGET_COMPILE_OPTIONS(rpoly_nofma_test PRIVATE -ffp-contract=off)
+    TARGET_LINK_LIBRARIES(rpoly_nofma_test GTest::gtest Eigen3::Eigen)
+    ADD_TEST(NAME rpoly_nofma_test
+      COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/rpoly_nofma_test)
+  ENDIF ()
 ENDIF (BUILD_TESTING)

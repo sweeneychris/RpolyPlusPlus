@@ -43,6 +43,7 @@
 #include <vector>
 
 #include "src/polynomial.h"
+#include "src/root_polishing.h"
 
 namespace rpoly_plus_plus {
 
@@ -1056,60 +1057,19 @@ void JenkinsTraubSolver<Vec>::PolishRoots() {
   }
   for (int r = 0; r < num_solved_roots_; ++r) {
     if ((*complex_roots_)(r) == 0.0) {
-      // Real root: polish on the real axis with real arithmetic. A complex
-      // Horner pass costs ~4 real multiplies per coefficient; this real pass
-      // costs one, so it is ~4x cheaper -- and the root stays exactly real.
-      double x = (*real_roots_)(r);
-      for (int it = 0; it < 2; ++it) {
-        double p = 0.0, dp = 0.0;
-        for (Eigen::Index i = 0; i < n; ++i) {
-          dp = dp * x + p;
-          p = p * x + original_polynomial_(i);
-        }
-        if (dp == 0.0) break;
-        const double x_new = x - p / dp;
-        // Keep the step only if the residual strictly decreases.
-        double p_new = 0.0;
-        for (Eigen::Index i = 0; i < n; ++i) {
-          p_new = p_new * x_new + original_polynomial_(i);
-        }
-        if (std::abs(p_new) < std::abs(p)) {
-          x = x_new;
-        } else {
-          break;
-        }
-      }
-      (*real_roots_)(r) = x;
+      (*real_roots_)(r) = internal::PolishRoot(original_polynomial_,
+                                               (*real_roots_)(r));
       continue;
     }
-
-    // Complex root: polish with complex arithmetic. Conjugate pairs are
-    // emitted consecutively; polish the first of the two and mirror, so the
-    // pair stays exactly conjugate.
-    std::complex<double> z((*real_roots_)(r), (*complex_roots_)(r));
+    // Complex root. Conjugate pairs are emitted consecutively; polish the
+    // first of the two and mirror, so the pair stays exactly conjugate.
+    const std::complex<double> z0((*real_roots_)(r), (*complex_roots_)(r));
     const bool is_pair =
         r + 1 < num_solved_roots_ &&
-        (*real_roots_)(r + 1) == z.real() &&
-        (*complex_roots_)(r + 1) == -z.imag();
-    for (int it = 0; it < 2; ++it) {
-      std::complex<double> p = 0.0, dp = 0.0;
-      for (Eigen::Index i = 0; i < n; ++i) {
-        dp = dp * z + p;
-        p = p * z + original_polynomial_(i);
-      }
-      if (dp == std::complex<double>(0.0, 0.0)) break;
-      const std::complex<double> z_new = z - p / dp;
-      // Keep the step only if the residual strictly decreases.
-      std::complex<double> p_new = 0.0;
-      for (Eigen::Index i = 0; i < n; ++i) {
-        p_new = p_new * z_new + original_polynomial_(i);
-      }
-      if (std::abs(p_new) < std::abs(p)) {
-        z = z_new;
-      } else {
-        break;
-      }
-    }
+        (*real_roots_)(r + 1) == z0.real() &&
+        (*complex_roots_)(r + 1) == -z0.imag();
+    const std::complex<double> z =
+        internal::PolishRoot(original_polynomial_, z0);
     (*real_roots_)(r) = z.real();
     (*complex_roots_)(r) = z.imag();
     if (is_pair) {
